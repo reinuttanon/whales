@@ -1,0 +1,331 @@
+#!/bin/bash
+
+# Whales informations
+WHALES_VERSION="0.1.0-dev"
+WHALES_RELEASE_DATE="Sep 7, 2021"
+WHALES_EXECUTABLE_COMMANDS=("build" "doc" "help" "--help" "config" "up" "version" "--version")
+WHALES_SUPPORTED_PLATFORMS=("wordpress" "woocommerce")
+
+# Dependencies
+REPOSITORY_ACCOUNT="https://github.com/reinuttanon"
+REPOSITORY_API="https://api.github.com/repos/reinuttanon"
+
+# Versioning
+VERSIONING_LOCATION=".version"
+
+app_name=""
+app_location=""
+build_location=""
+build_platform=""
+build_source=""
+build_version="latest"
+container_base_location="containers"
+container_location=""
+
+the_command=""
+arg_position=0
+
+
+# ..
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+# PUBLIC COMMANDS
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+# ..
+
+###
+ # Documentation.
+ # @executable
+ ##
+--help () { doc ; }
+help () { doc ; }
+doc () {
+echo -e "
+=========================
+WHALES DOCUMENTATION
+=========================
+Usage: whales <command> <platform>[:<version>] [<app_name>]
+> Available commands:   <
+> --------------------- <
+  doc, help\tDisplay the Whales's documentation
+  up\t\tBoot up a target container
+  build\t\tRe-build a target container before boot up
+  version\tShow Whales's current version.
+
+> Supported platforms   <
+> --------------------- <
+  wordpress
+  woocommerce
+
+> Examples              <
+> --------------------- <
+$ whales build woocommerce
+$ whales up woocommerce:3.1.0
+$ whales up woocommerce:3.1.0 mywc
+"
+exit
+}
+
+###
+ # Show Whales's version.
+ # @executable
+ ##
+--version () { version ; }
+version () {
+echo -e "
+Whales version $WHALES_VERSION (released on $WHALES_RELEASE_DATE)
+"
+}
+
+###
+ # Config configuration options
+ # @executable
+ ##
+config() {
+    echo 'test'
+}
+
+###
+ # Boot up a container!
+ # @executable
+ ##
+up() {
+    bootstrap
+    # $container_location/bin/docky-servant up $build_version $build_location
+}
+
+###
+ # Build it!
+ # @executable
+ ##
+build() {
+    bootstrap
+    # $container_location/bin/docky-servant build $build_version $build_location
+}
+
+
+# ..
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+# PRIVATE FUNCTIONS
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+# ..
+
+###
+ # Check if a given command can be executed.
+ #
+ # @param $1 string  a given command
+ ##
+isExecutable () {
+    local the_command
+
+    for the_command in ${WHALES_EXECUTABLE_COMMANDS[@]}; do
+        [[ $the_command == $1 ]] && {
+            return 0
+        }
+    done
+
+    return 1
+}
+
+###
+ # Check if Whales supports a build target platform.
+ #
+ # @param $1 string  name of a platform you want to check
+ ##
+isPlatformAvailable () {
+    local platform
+
+    for platform in ${WHALES_SUPPORTED_PLATFORMS[@]}; do
+        [[ $platform == $1 ]] && {
+            return 0
+        }
+    done
+
+    return 1
+}
+
+###
+ # Container version checking
+ ##
+fetchContainer () {
+    local container_version=$(curl -s $REPOSITORY_API/docker-$build_platform/git/refs/heads/master | jq '.object.sha' | sed -e 's/^"//' -e 's/"$//')
+    container_location=$container_base_location/$build_platform
+
+    echo "Wadka: checking the container version.."
+
+    # Check for container versioning directory.
+    if [ ! -d $container_base_location/.versions ]; then
+        mkdir -p $container_base_location/.versions
+        echo " > Created a $container_base_location/.versions directory."
+    fi
+
+    # Cache a versioning file.
+    if [ ! -f "$container_base_location/.versions/docker-$build_platform.$container_version" ]; then
+        echo " > Found a new version of docker-$build_platform (commit: $container_version)"
+
+        rm -f $container_base_location/.versions/docker-$build_platform.*
+        rm -R $container_location
+
+        touch $container_base_location/.versions/docker-$build_platform.$container_version
+
+        echo " > Cached \"$container_base_location/.versions/docker-$build_platform.$container_version\""
+    else
+        echo " > The container is up-to-date."
+    fi
+
+    # Check for base container directory.
+    if [ ! -d $container_location ]; then
+        mkdir -p $container_location
+        echo " > Created a $container_location directory."
+
+        downloadContainer
+    fi
+}
+
+###
+ # Download a container from https://github.com/guzzilar/*
+ ##
+downloadContainer () {
+    local package_location="$REPOSITORY_ACCOUNT/docker-$build_platform/archive/master.zip"
+    local tmp_location=$container_location/tmp
+
+    mkdir $tmp_location
+    echo "Wadka: download a Docker container from $package_location."
+    echo " > Downloading"
+    wget -O $tmp_location/docker-$build_platform.zip $package_location
+
+    # 2. Unzip
+    echo " > unzip $tmp_location/docker-$build_platform.zip"
+    unzip $tmp_location/docker-$build_platform.zip -d $tmp_location/
+    echo " > moving file to $container_location."
+    mv $tmp_location/docker-$build_platform-master/* $container_location
+
+    # 3. Delete tmp.
+    echo " > remove temp files."
+    rm -R $tmp_location
+}
+
+###
+ # Set the location you wanted to build an app with.
+ ##
+setAppLocation () {
+    app_location="${1#*=}"
+    app_location=${app_location%/}
+}
+
+###
+ # Preparation
+ ##
+initialize () {
+    fetchContainer
+
+    build_location="app/$([[ ! -z $app_name ]] && echo $app_name || echo $build_platform)"
+
+    echo ".."
+    echo "."
+    echo "Wadka: preparing docker..."
+
+    if [ ! -d $build_location ]; then
+        mkdir -p $build_location
+        echo " > Created a $build_location directory."
+    else
+        echo " > Cannot create a new app, $build_location already exists."
+    fi
+}
+
+###
+ # Create a container
+ ##
+bootstrap () {
+echo -e "
+.
+..
+whales: running up \"$build_platform\" version \"$build_version\" container..
+"
+
+initialize
+
+echo -e "
+.
+..
+whales: Booting up the docker!
+whales: ================================================================================
+"
+}
+
+
+# ..
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+# EXECUTION AREA
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+# ..
+the_command=$1
+if ! isExecutable $the_command; then
+echo -e "
+.
+..
+whales: you may enter a wrong command. Cannot execute the command \"$the_command\".
+..
+."
+doc
+fi
+
+# Remove "execute command" from arguments.
+shift
+
+# Reading arguments.
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --source=*)
+            build_source="${1#*=}"
+            shift
+            ;;
+
+        --location=*)
+            setAppLocation ${1#*=}
+            shift
+            ;;
+
+        *)
+            [[ -z $build_platform ]] && {
+                OIFS=$IFS
+                IFS=":"
+                target=($1)
+
+                if ! isPlatformAvailable ${target[0]}; then
+                    echo ""
+                    echo "whales: platform \"$1\" does not match with any platform(s) I supported."
+                    doc
+                fi
+
+                build_platform=${target[0]}
+                build_version=$([[ ! -z ${target[1]} ]] && echo ${target[1]} || echo "latest")
+
+                IFS=$OIFS
+                arg_position=1
+
+                shift
+                continue
+            }
+
+            [[ $arg_position -eq 1 ]] && {
+                app_name=$1
+
+                shift
+                continue
+            }
+            ;;
+    esac
+done
+
+[[ $the_command == "build" && -z $build_platform ]] && {
+echo -e "
+whales: you need to specify platform you wish me to build.
+
+Example:
+$ whales build <platform[wordpress|woocommerce]>
+"
+
+exit
+}
+
+$the_command
